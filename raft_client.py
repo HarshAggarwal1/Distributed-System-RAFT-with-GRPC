@@ -42,9 +42,9 @@ class RaftClient:
             
             key = ""
             value = ""
+            key = input("Enter the key: ")
             
             if type == "SET":
-                key = input("Enter the key, else leave blank: ")
                 value = input("Enter the value, else leave blank: ")
                 
             with grpc.insecure_channel(self.leader) as channel:
@@ -56,7 +56,8 @@ class RaftClient:
                     value=value
                 )
                 response = stub.ServeClient(request)
-                print(f"{datetime.datetime.now()} - {response.data}")
+                if type == "GET":
+                    print(f"{datetime.datetime.now()} - {response.data}")
                 print("===============================================================")
                 time.sleep(2)
     
