@@ -8,7 +8,7 @@ class RaftClient:
     def __init__(self, address):
         self.address = address
         self.leader = None
-        self.addresses = ["localhost:50051", "localhost:50052"]
+        self.addresses = ["localhost:50051", "localhost:50052", "localhost:50053", "localhost:50054", "localhost:50055"]
 
     def main(self):
         print(f"{datetime.datetime.now()} - Client started at {self.address}")
@@ -40,9 +40,8 @@ class RaftClient:
             elif type == 2:
                 type = "SET"
             
-            key = ""
+            key = "x"
             value = ""
-            key = input("Enter the key: ")
             
             if type == "SET":
                 value = input("Enter the value, else leave blank: ")

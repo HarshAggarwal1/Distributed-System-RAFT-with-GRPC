@@ -142,6 +142,7 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
             self.update_time()
             if request.type == 0:
                 print(f"{datetime.datetime.now()} - Node {self.node_id} received heartbeat from {request.leader_id}")
+                self.current_term = request.term
                 return raft_pb2.AppendEntryResponse(term=self.current_term, success=True, leader_id=self.leader_id)
             elif request.type == 1:
                 print(f"{datetime.datetime.now()} - Node {self.node_id} received  PRE FINAL SET request from {request.leader_id}")
@@ -150,11 +151,27 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
             elif request.type == 2:
                 print(f"{datetime.datetime.now()} - Node {self.node_id} received FINAL SET request from {request.leader_id}")
                 
-                if request.prev_log_index >= len(self.logs):
-                    self.logs.append(request.entry)
+                if request.prev_log_index == 0:
+                    self.logs = request.entry
+                
                 else:
-                    self.logs = self.logs[:request.prev_log_index + 1]
-                    self.logs.append(request.entry)
+                    ind = min(request.prev_log_index - 1, len(self.logs) - 1)
+                    found = -1
+                    while ind >= 0:
+                        if self.logs[ind].term == request.entry[0].term:
+                            found = ind
+                            break
+                        print(f"{datetime.datetime.now()} - Node {self.node_id} - {self.logs[ind].term} != {request.entry[0].term}")
+                        ind -= 1
+                    
+                    if found == -1:
+                        self.logs = request.entry
+                    else:    
+                        self.logs = self.logs[:found + 1]
+                        i = found + 1
+                        while i < len(request.entry):
+                            self.logs.append(request.entry[i])
+                            i += 1
                 
                 if request.leader_commit > self.commit_index:
                     self.commit_index = min(request.leader_commit, len(self.logs) - 1)
@@ -275,7 +292,7 @@ def serve():
     try:
         node_id = int(input("Enter Node ID: "))
         my_address = input("Enter my address: ")
-        peer_addresses = ["localhost:50051", "localhost:50052"]
+        peer_addresses = ["localhost:50051", "localhost:50052", "localhost:50053", "localhost:50054", "localhost:50055"]
         
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         node = RaftNode(node_id, my_address, peer_addresses)
