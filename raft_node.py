@@ -28,6 +28,7 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
         self.lease_duration = 10 # seconds
         self.timeout = int(random.uniform(5, 10))
         # ====
+        self.old_lease = 0
         self.next_lease = 0
         self.next_timeout = int(time.time()) + self.timeout
         
@@ -81,7 +82,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                             print(f"{datetime.datetime.now()} - Node {self.node_id} won election for term {self.current_term}")
                             self.state = 'LEADER'
                             self.leader_id = self.node_id
-                            self.next_lease_time = int(time.time()) + self.lease_duration
+                            self.next_lease = int(time.time()) + self.lease_duration
+                            self.old_lease = 0
                             self.send_heartbeat()
                             return
                 except grpc.RpcError:
@@ -99,6 +101,7 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
             self.state = 'FOLLOWER'
             self.next_election_time = int(time.time()) + self.timeout
             self.vote_count = 0
+            self.old_lease = int(time.time()) + self.lease_duration
             self.leader_id = request.candidate_id
             return raft_pb2.RequestVoteResponse(term=self.current_term, vote_granted=True)
     
@@ -131,7 +134,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                                 self.next_timeout = int(time.time()) + self.timeout
                                 return
                             else:
-                                self.update_time()
+                                self.next_lease = int(time.time()) + self.lease_duration
+                                self.next_timeout = int(time.time()) + self.timeout
                 except grpc.RpcError:
                     print(f"Error sending AppendEntry to {peer}")
                     
@@ -139,7 +143,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
         if request.term < self.current_term:
             return raft_pb2.AppendEntryResponse(term=self.current_term, success=True, leader_id=self.leader_id)
         else:
-            self.update_time()
+            self.old_lease = int(time.time()) + self.lease_duration
+            self.next_timeout = int(time.time()) + self.timeout
             if request.type == 0:
                 print(f"{datetime.datetime.now()} - Node {self.node_id} received heartbeat from {request.leader_id}")
                 self.current_term = request.term
@@ -150,39 +155,41 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                 
             elif request.type == 2:
                 print(f"{datetime.datetime.now()} - Node {self.node_id} received FINAL SET request from {request.leader_id}")
-                
-                if request.prev_log_index == 0:
-                    self.logs = request.entry
-                
-                else:
-                    ind = min(request.prev_log_index - 1, len(self.logs) - 1)
-                    found = -1
-                    while ind >= 0:
-                        if self.logs[ind].term == request.entry[0].term:
-                            found = ind
-                            break
-                        print(f"{datetime.datetime.now()} - Node {self.node_id} - {self.logs[ind].term} != {request.entry[0].term}")
-                        ind -= 1
-                    
-                    if found == -1:
-                        self.logs = request.entry
-                    else:    
-                        self.logs = self.logs[:found + 1]
-                        i = found + 1
-                        while i < len(request.entry):
-                            self.logs.append(request.entry[i])
-                            i += 1
-                
-                if request.leader_commit > self.commit_index:
-                    self.commit_index = min(request.leader_commit, len(self.logs) - 1)
-                
-                self.temp_x = 0
+                self.replication_handler(request.prev_log_index, request.entry, request.leader_commit)
                            
             print(f"{datetime.datetime.now()} - Node {self.node_id} logs: {self.logs}")
             return raft_pb2.AppendEntryResponse(term=self.current_term, success=True, leader_id=self.leader_id)
+        
+    def replication_handler(self, prev_log_index, entry, leader_commit):
+        if prev_log_index == 0:
+                self.logs = entry
+            
+        else:
+            ind = min(prev_log_index - 1, len(self.logs) - 1)
+            found = -1
+            while ind >= 0:
+                if self.logs[ind].term == entry[0].term:
+                    found = ind
+                    break
+                print(f"{datetime.datetime.now()} - Node {self.node_id} - {self.logs[ind].term} != {entry[0].term}")
+                ind -= 1
+            
+            if found == -1:
+                self.logs = entry
+            else:    
+                self.logs = self.logs[:found + 1]
+                i = found + 1
+                while i < len(entry):
+                    self.logs.append(entry[i])
+                    i += 1
+        
+        if leader_commit > self.commit_index:
+            self.commit_index = min(leader_commit, len(self.logs) - 1)
+        
+        self.temp_x = 0
     
     def ServeClient(self, request, context):
-        if self.state != 'LEADER':
+        if self.state != 'LEADER' or self.old_lease > int(time.time()):
             return raft_pb2.ServeClientResponse(success=False, leader_id=str(self.leader_id))
         
         print(f"{datetime.datetime.now()} - Node {self.node_id} serving client: {request.address}")
@@ -215,7 +222,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                             )
                             response = stub.AppendEntry(request)
                             if response.success:
-                                self.update_time()
+                                self.next_lease = int(time.time()) + self.lease_duration
+                                self.next_timeout = int(time.time()) + self.timeout
                                 count += 1
                     except grpc.RpcError:
                         print(f"Error sending AppendEntries to {peer}")
@@ -241,7 +249,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                                 )
                                 response = stub.AppendEntry(request)
                                 if response.success:
-                                    self.update_time()
+                                    self.next_lease = int(time.time()) + self.lease_duration
+                                    self.next_timeout = int(time.time()) + self.timeout
                         except grpc.RpcError:
                             print(f"Error sending AppendEntries to {peer}")
                 
@@ -251,12 +260,6 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
             else :
                 print(f"{datetime.datetime.now()} - Node {self.node_id} SET request failed")
                 return raft_pb2.ServeClientResponse(success=False)
-            
-                
-                
-    def update_time(self):
-        self.next_lease = int(time.time()) + self.lease_duration
-        self.next_timeout = int(time.time()) + self.timeout
             
         
         
@@ -279,6 +282,7 @@ def run(node):
         elif node.state == 'CANDIDATE':
             node.start_election()
         elif node.state == 'LEADER' and int(time.time()) > node.next_lease:
+            node.next_lease = 0
             node.state = 'FOLLOWER'
         elif node.state == 'LEADER':
             node.send_heartbeat()
