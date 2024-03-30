@@ -8,7 +8,7 @@ class RaftClient:
     def __init__(self, address):
         self.address = address
         self.leader = None
-        self.addresses = ["localhost:50051", "localhost:50052"]
+        self.addresses = ["localhost:50051", "localhost:50052", "localhost:50053", "localhost:50054", "localhost:50055"]
     
     def find_leader(self):
         for addr in self.addresses:
@@ -20,7 +20,7 @@ class RaftClient:
                     type='GET'
                 )
                 response = stub.ServeClient(request)
-                
+                print(response)
                 if response.success:
                     self.leader = self.addresses[int(response.leader_id)]
                     print(f"{datetime.datetime.now()} - Leader is {self.leader}")

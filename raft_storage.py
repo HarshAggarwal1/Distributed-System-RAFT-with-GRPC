@@ -10,7 +10,7 @@ class RaftStorage():
         
         if not os.path.exists(self.logs_directory):
             os.makedirs(self.logs_directory)
-            
+        
         self.logs_file = os.path.join(self.logs_directory, "logs.txt")
         self.metadata_file = os.path.join(self.logs_directory, "metadata.json")
         self.dump_file = os.path.join(self.logs_directory, "dump.txt")
@@ -19,7 +19,7 @@ class RaftStorage():
         if os.path.exists(self.metadata_file):
             file = open(self.metadata_file, 'r')
             metadata = json.load(file)
-            
+            # print(metadata)
             commit_index = metadata.get('commit_index', 0)
             current_term = metadata.get('current_term', 0)
             voted_for = metadata.get('voted_for', None)

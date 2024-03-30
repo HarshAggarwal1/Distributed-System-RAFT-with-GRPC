@@ -23,8 +23,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
         self.current_term = 0
 
         # Leader information
-        self.voted_for = None
-        self.leader_id = None
+        self.voted_for = ""
+        self.leader_id = ""
         
         # Timeout and lease information
         self.lease_duration = 20 # seconds
@@ -42,7 +42,6 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
         self.dump = []
         
         self.raft_storage = RaftStorage(self.node_id)
-        self.raft_storage.save_metadata(self.commit_index, self.current_term, self.voted_for, self.temp_x)
         
         
     def start_election(self):
@@ -54,7 +53,7 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
         # print(f"{datetime.datetime.now()} - Node {self.node_id} starting election for term {self.current_term}")
         self.raft_storage.save_dump_info(f"{datetime.datetime.now()} - Node {self.node_id} starting election for term {self.current_term}")
         
-        self.voted_for = self.node_id
+        self.voted_for = str(self.node_id)
         self.vote_count = 1
         
         request = raft_pb2.RequestVoteRequest(
@@ -95,7 +94,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                             self.raft_storage.save_metadata(self.commit_index, self.current_term, None, self.temp_x)
                             self.send_heartbeat()
                             return
-                except grpc.RpcError:
+                except grpc.RpcError as e:
+                    # print(e)
                     # print(f"Error sending RequestVote to {peer}")
                     self.raft_storage.save_dump_info(f"Error sending RequestVote to {peer}")
     
@@ -152,8 +152,8 @@ class RaftNode(raft_pb2_grpc.RaftServiceServicer):
                             else:
                                 self.next_lease = int(time.time()) + self.lease_duration
                                 self.next_timeout = int(time.time()) + self.timeout
-                except grpc.RpcError as e:
-                    # print(f"Error sending HeartBeat to {peer} - {e}")
+                except grpc.RpcError:
+                    # print(f"Error sending HeartBeat to {peer}")
                     self.raft_storage.save_dump_info(f"Error sending HeartBeat to {peer}")
                     
     def AppendEntry(self, request, context):
@@ -303,12 +303,14 @@ def run(node):
     print(f"{datetime.datetime.now()} - Peer Addresses: {node.peer_addresses}")
     print(f"{datetime.datetime.now()} - My Address: {node.my_address}")
     print(f"{datetime.datetime.now()} - Election Timeout: {node.timeout}")
+    print(f"{datetime.datetime.now()} - Node {node.node_id} - Current Term: {node.current_term}")
     print("============================================================") 
     
     node.temp_x = node.raft_storage.load_metadata()[3]
     node.current_term = node.raft_storage.load_metadata()[1]
     node.voted_for = node.raft_storage.load_metadata()[2]
     node.commit_index = node.raft_storage.load_metadata()[0]
+    
     
     while True:
         if node.state == 'FOLLOWER' and int(time.time()) > node.next_timeout:
@@ -348,6 +350,7 @@ def serve():
         except KeyboardInterrupt:
             server.stop(0)
     except Exception as e:
+        # print(e)
         print(f"{datetime.datetime.now()} - Error Occured starting Raft Node")
     
     
