@@ -337,7 +337,7 @@ def serve():
     try:
         node_id = int(input("Enter Node ID: "))
         my_address = input("Enter my address: ")
-        peer_addresses = ["localhost:50051", "localhost:50052"]
+        peer_addresses = ["localhost:50051", "localhost:50052", "localhost:50053", "localhost:50054", "localhost:50055"]
         
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         node = RaftNode(node_id, my_address, peer_addresses)
